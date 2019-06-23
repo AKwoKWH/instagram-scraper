@@ -156,6 +156,11 @@ class InstagramScraper(object):
         time.sleep(secs % min_delay)
 
     def _retry_prompt(self, url, exception_message):
+#         Temp bypass for requesting null.jpg ERROR.
+        if "null" in str(url):
+            self.logger.info( 'This is a [Requesting Null.jpg Error] - Auto Abort' )
+            return None
+        
         """Show prompt and return True: retry, False: ignore, None: abort"""
         answer = input( 'Repeated error {0}\n(A)bort, (I)gnore, (R)etry or retry (F)orever?'.format(exception_message) )
         if answer:
