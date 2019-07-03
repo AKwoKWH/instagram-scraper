@@ -170,7 +170,7 @@ class InstagramScraper(object):
         if answer:
             answer = answer[0].upper()
             if answer == 'I':
-                self.logger.info( 'The user has chosen to ignore {0}'.format(url) )
+                self.logger.info( 'The user has chosen to ignore error: {} , {}'.format(exception_message,url) )
                 return False
             elif answer == 'R':
                 return True
