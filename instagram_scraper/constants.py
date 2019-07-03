@@ -29,7 +29,7 @@ QUERY_MEDIA = BASE_URL + 'graphql/query/?query_hash=42323d64886122307be10013ad2d
 QUERY_MEDIA_VARS = '{{"id":"{0}","first":50,"after":"{1}"}}'
 
 MAX_CONCURRENT_DOWNLOADS = 9 #Origional 5
-CONNECT_TIMEOUT = 50 #Origional 90
+CONNECT_TIMEOUT = 45 #Origional 90
 MAX_RETRIES = 3 #Origional 5
 RETRY_DELAY = 3 #Origional 5
 MAX_RETRY_DELAY = 30 #Origional 60
