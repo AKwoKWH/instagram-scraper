@@ -117,7 +117,7 @@ class InstagramScraper(object):
 
         # Set up a logger
         if self.logger is None:
-            self.logger = InstagramScraper.get_logger(level=logging.DEBUG, dest=default_attr.get('log_destination'), verbose=default_attr.get('verbose'))
+            self.logger = InstagramScraper.get_logger(level=logging.ERROR, dest=default_attr.get('log_destination'), verbose=default_attr.get('verbose'))
 
         self.posts = []
 
@@ -1190,7 +1190,7 @@ class InstagramScraper(object):
                 json.dump(output_list, codecs.getwriter('utf-8')(f), indent=4, sort_keys=True, ensure_ascii=False)
 
     @staticmethod
-    def get_logger(level=logging.DEBUG, dest='', verbose=0):
+    def get_logger(level=logging.ERROR, dest='', verbose=0):
         """Returns a logger."""
         logger = logging.getLogger(__name__)
 
