@@ -861,6 +861,7 @@ class InstagramScraper(object):
         if media:
             try:
                 while True:
+                    if media == None: return
                     for item in media:
                         if not self.is_new_media(item):
                             return
