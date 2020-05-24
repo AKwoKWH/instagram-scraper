@@ -1138,7 +1138,17 @@ class InstagramScraper(object):
 
     @staticmethod
     def __search(query):
-        resp = requests.get(SEARCH_URL.format(query))
+        proxyList = open('/home/cumulonimbot/proxyList.json', 'r').read()
+        selectedProxy = random.choice(proxyList)
+        selectedProxyUserName = list(selectedProxy.keys())[0]
+        selectedProxyUserName = selectedProxyUserName.replace('000',str(random.randint(*[1,10])))
+        selectedProxyPassword = list(selectedProxy.values())[0]
+        proxyDict = {
+            "http": "http://{}:{}@p.webshare.io:80".format(selectedProxyUserName,selectedProxyPassword),
+            "https": "http://{}:{}@p.webshare.io:80".format(selectedProxyUserName,selectedProxyPassword),
+        }
+        
+        resp = requests.get(SEARCH_URL.format(query),proxies=proxyDict,headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:64.0) Gecko/20100101 Firefox/64.0',})
         return json.loads(resp.text)
 
     def search_locations(self):
