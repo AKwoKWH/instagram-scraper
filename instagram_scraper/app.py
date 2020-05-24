@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import argparse
+import random
 import codecs
 import configparser
 import errno
