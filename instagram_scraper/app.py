@@ -19,6 +19,7 @@ import textwrap
 import time
 import xml.etree.ElementTree as ET
 import moviepy.editor as mpe
+import random
 
 try:
     from urllib.parse import urlparse
