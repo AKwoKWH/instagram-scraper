@@ -207,8 +207,8 @@ class InstagramScraper(object):
             if self.quit:
                 return
             try:
-                urlRequest = args[0]
                 proxyAddress = self.getProxy()
+                # urlRequest = args[0]
                 # header = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:64.0) Gecko/20100101 Firefox/64.0','X-Requested-With': 'XMLHttpRequest'}
                 # response = self.session.get(timeout=CONNECT_TIMEOUT, cookies=self.cookies, *args, **kwargs)
                 response = self.session.get(timeout=CONNECT_TIMEOUT, cookies=self.cookies, proxies=proxyAddress, *args, **kwargs)                
@@ -653,6 +653,7 @@ class InstagramScraper(object):
 
                 # Get the user metadata.
                 shared_data = self.get_shared_data(username)
+                self.logger.info('User Request: {}'.format(str(shared_data)[0:500]))
                 user = self.deep_get(shared_data, 'entry_data.ProfilePage[0].graphql.user')
 
                 if not user:
