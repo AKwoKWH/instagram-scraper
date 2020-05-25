@@ -212,7 +212,7 @@ class InstagramScraper(object):
                 # header = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:64.0) Gecko/20100101 Firefox/64.0','X-Requested-With': 'XMLHttpRequest'}
                 # response = self.session.get(timeout=CONNECT_TIMEOUT, cookies=self.cookies, *args, **kwargs)
                 response = self.session.get(timeout=CONNECT_TIMEOUT, cookies=self.cookies, proxies=proxyAddress, *args, **kwargs)                
-                # self.logger.info('Getting Request: {0} {1}'.format(str(urlRequest), str(proxyAddress)))
+                self.logger.info('Request Response: {0} {1}'.format(str(response),str(response.text)))
                 # response = requests.get(urlRequest, headers=header , timeout=15, proxies=proxyAddress)
 
                 if response.status_code == 404:
