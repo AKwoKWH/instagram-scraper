@@ -88,7 +88,7 @@ class InstagramScraper(object):
     """InstagramScraper scrapes and downloads an instagram user's photos and videos"""
 
     def __init__(self, **kwargs):
-    	print('InstagramScraper Args:',**kwargs)
+        print('InstagramScraper Args:',**kwargs)
         default_attr = dict(username='', usernames=[], filename=None,
                             login_user=None, login_pass=None,
                             followings_input=False, followings_output='profiles.txt',
