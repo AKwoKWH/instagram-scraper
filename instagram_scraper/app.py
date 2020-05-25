@@ -162,7 +162,7 @@ class InstagramScraper(object):
             time.sleep(min_delay)
             if self.quit:
                 return
-        time.sleep(secs % min_delay)
+        # time.sleep(secs % min_delay)
 
     def _retry_prompt(self, url, exception_message):
         """Show prompt and return True: retry, False: ignore, None: abort"""
@@ -187,8 +187,8 @@ class InstagramScraper(object):
         proxyList = open('/home/cumulonimbot/proxyList.json', 'r').read()
         selectedProxy = random.choice(eval(proxyList))
         selectedProxyUserName = list(selectedProxy.keys())[0]
-        # selectedProxyUserName = selectedProxyUserName.replace('000',str(random.randint(*[1,10])))
-        selectedProxyUserName = selectedProxyUserName.replace('000','10')
+        selectedProxyUserName = selectedProxyUserName.replace('000',str(random.randint(*[1,10])))
+        # selectedProxyUserName = selectedProxyUserName.replace('000','10')
         selectedProxyPassword = list(selectedProxy.values())[0]
         proxyDict = {
             "http": "http://{}:{}@p.webshare.io:80".format(selectedProxyUserName,selectedProxyPassword),
