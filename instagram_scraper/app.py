@@ -211,7 +211,7 @@ class InstagramScraper(object):
                 urlRequest = args[0]
                 proxyAddress = self.getProxy()
                 header = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:64.0) Gecko/20100101 Firefox/64.0','X-Requested-With': 'XMLHttpRequest'}
-                self.logger.warning('Getting Request: {0} {1}'.format(str(urlRequest), str(proxyAddress)))
+                self.logger.info('Getting Request: {0} {1}'.format(str(urlRequest), str(proxyAddress)))
                 response = requests.get(urlRequest, headers=header , timeout=15, proxies=proxyAddress)
 
                 if response.status_code == 404:
@@ -872,7 +872,7 @@ class InstagramScraper(object):
 
     def get_shared_data(self, username=''):
         """Fetches the user's metadata."""
-        resp = self.get_json(BASE_URL + username)
+        resp = self.get_json(BASE_URL + username + '/?__a=1')
 
         if resp is not None and '_sharedData' in resp:
             try:
