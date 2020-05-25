@@ -653,7 +653,7 @@ class InstagramScraper(object):
 
                 # Get the user metadata.
                 shared_data = self.get_shared_data(username)
-                self.logger.info('User Request: {}'.format(str(shared_data)[0:500]))
+                self.logger.info('User Request: {}'.format(str(shared_data)))
                 user = self.deep_get(shared_data, 'entry_data.ProfilePage[0].graphql.user')
 
                 if not user:
