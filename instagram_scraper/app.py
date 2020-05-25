@@ -187,7 +187,8 @@ class InstagramScraper(object):
         proxyList = open('/home/cumulonimbot/proxyList.json', 'r').read()
         selectedProxy = random.choice(eval(proxyList))
         selectedProxyUserName = list(selectedProxy.keys())[0]
-        selectedProxyUserName = selectedProxyUserName.replace('000',str(random.randint(*[10,10])))
+        selectedProxyUserName = selectedProxyUserName.replace('000',str(random.randint(*[1,10])))
+        selectedProxyUserName = selectedProxyUserName.replace('000','10')
         selectedProxyPassword = list(selectedProxy.values())[0]
         proxyDict = {
             "http": "http://{}:{}@p.webshare.io:80".format(selectedProxyUserName,selectedProxyPassword),
@@ -211,7 +212,7 @@ class InstagramScraper(object):
                 # urlRequest = args[0]
                 # header = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:64.0) Gecko/20100101 Firefox/64.0','X-Requested-With': 'XMLHttpRequest'}
                 # response = self.session.get(timeout=CONNECT_TIMEOUT, cookies=self.cookies, *args, **kwargs)
-                self.logger.info('Request Parameters: {}'.format(args[0]))
+                self.logger.info('Request Parameters: {} {}'.format(args[0]) , str(proxyAddress.get('https','')))
                 response = self.session.get(timeout=CONNECT_TIMEOUT, cookies=self.cookies, proxies=proxyAddress, *args, **kwargs)                
                 self.logger.info('Request Response: {0} {1}'.format(str(response),str(response.text)[0:100]))
                 # response = requests.get(urlRequest, headers=header , timeout=15, proxies=proxyAddress)
