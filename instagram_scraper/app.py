@@ -874,7 +874,7 @@ class InstagramScraper(object):
 
     def get_shared_data(self, username=''):
         """Fetches the user's metadata."""
-        resp = self.get_json(BASE_URL + username + '/?__a=1')
+        resp = self.get_json(BASE_URL + username)
 
         if resp is not None and '_sharedData' in resp:
             try:
