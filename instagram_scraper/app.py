@@ -14,9 +14,12 @@ import hashlib
 import os
 import pickle
 import re
+import socket
 import sys
 import textwrap
 import time
+import xml.etree.ElementTree as ET
+import moviepy.editor as mpe
 
 try:
     from urllib.parse import urlparse
@@ -24,15 +27,13 @@ except ImportError:
     from urlparse import urlparse
 
 import warnings
-
 import threading
 import concurrent.futures
 import requests
+import requests.packages.urllib3.util.connection as urllib3_connection
 import tqdm
 
 from instagram_scraper.constants import *
-
-
 
 try:
     reload(sys)  # Python 2.7
@@ -56,8 +57,14 @@ class LockedStream(object):
     def flush(self):
         return getattr(self.file, 'flush', lambda: None)()
 
+def allowed_gai_family():
+    family = socket.AF_INET  # force IPv4
+    return family
+
 original_stdout, original_stderr = sys.stdout, sys.stderr
 sys.stdout, sys.stderr = map(LockedStream, (sys.stdout, sys.stderr))
+# Force using IPv4 connections, when the machine where this code runs uses IPv6
+urllib3_connection.allowed_gai_family = allowed_gai_family
 
 def threaded_input(prompt):
     with input_lock:
@@ -87,8 +94,8 @@ class InstagramScraper(object):
                             followings_input=False, followings_output='profiles.txt',
                             destination='./', logger=None, retain_username=False, interactive=False,
                             quiet=False, maximum=0, media_metadata=False, profile_metadata=False, latest=False,
-                            latest_stamps=False, cookiejar=None,
-                            media_types=['image', 'video', 'story-image', 'story-video'],
+                            latest_stamps=False, cookiejar=None, filter_location=None, filter_locations=None,
+                            media_types=['image', 'video', 'story-image', 'story-video', 'broadcast'],
                             tag=False, location=False, search_location=False, comments=False,
                             verbose=0, include_location=False, filter=None, proxies={}, no_check_certificate=False,
                                                         template='{urlname}', log_destination='')
@@ -122,6 +129,7 @@ class InstagramScraper(object):
             self.logger = InstagramScraper.get_logger(level=logging.ERROR, dest=default_attr.get('log_destination'), verbose=default_attr.get('verbose'))
 
         self.posts = []
+        self.stories = []
 
         self.session = requests.Session()
         if self.no_check_certificate:
@@ -147,7 +155,6 @@ class InstagramScraper(object):
         self.last_scraped_filemtime = 0
         if default_attr['filter']:
             self.filter = list(self.filter)
-
         self.quit = False
 
     def sleep(self, secs):
@@ -1848,6 +1855,7 @@ class InstagramScraper(object):
         try:
             for value in self.usernames:
                 self.posts = []
+                self.stories = []
                 self.last_scraped_filemtime = 0
                 greatest_timestamp = 0
                 future_to_item = {}
@@ -1860,6 +1868,10 @@ class InstagramScraper(object):
                 iter = 0
                 for item in tqdm.tqdm(media_generator(value), desc='Searching {0} for posts'.format(value), unit=" media",
                                       disable=self.quiet):
+
+                    if self.filter_locations:
+                        if item.get("location") is None or self.get_key_from_value(self.filter_locations, item["location"].get("id")) is None:
+                            continue
                     if ((item['is_video'] is False and 'image' in self.media_types) or \
                                 (item['is_video'] is True and 'video' in self.media_types)
                         ) and self.is_new_media(item):
@@ -1897,11 +1909,8 @@ class InstagramScraper(object):
                 if greatest_timestamp > self.last_scraped_filemtime:
                     self.set_last_scraped_timestamp(value, greatest_timestamp)
 
-                if (self.media_metadata or self.comments or self.include_location) and self.posts:
-                    if self.latest:
-                        self.merge_json({ 'GraphImages': self.posts }, '{0}/{1}.json'.format(dst, value))
-                    else:
-                        self.save_json({ 'GraphImages': self.posts }, '{0}/{1}.json'.format(dst, value))
+                self._persist_metadata(dst, value)
+
         finally:
             self.quit = True
 
@@ -1965,7 +1974,6 @@ class InstagramScraper(object):
 
         if 'urls' not in node:
             node['urls'] = []
-
         if node['is_video'] and 'video_url' in node:
             node['urls'] = [node['video_url']]
         elif '__typename' in node and node['__typename'] == 'GraphImage':
@@ -2012,6 +2020,7 @@ class InstagramScraper(object):
         try:
             for username in self.usernames:
                 self.posts = []
+                self.stories = []
                 self.last_scraped_filemtime = 0
                 greatest_timestamp = 0
                 future_to_item = {}
@@ -2033,10 +2042,11 @@ class InstagramScraper(object):
                 self.rhx_gis = ""
 
                 self.get_profile_pic(dst, executor, future_to_item, user, username)
+                self.get_profile_info(dst, username)
 
                 if self.logged_in:
-                    self.get_profile_info(dst, username)
                     self.get_stories(dst, executor, future_to_item, user, username)
+                    self.get_broadcasts(dst, executor, future_to_item, user)
 
                 # Crawls the media and sends it to the executor.
                 try:
@@ -2061,11 +2071,8 @@ class InstagramScraper(object):
                     if greatest_timestamp > self.last_scraped_filemtime:
                         self.set_last_scraped_timestamp(username, greatest_timestamp)
 
-                    if (self.media_metadata or self.comments or self.include_location) and self.posts:
-                        if self.latest:
-                            self.merge_json({ 'GraphImages': self.posts }, '{0}/{1}.json'.format(dst, username))
-                        else:
-                            self.save_json({ 'GraphImages': self.posts }, '{0}/{1}.json'.format(dst, username))
+                    self._persist_metadata(dst, username)
+
                 except ValueError:
                     self.logger.error("Unable to scrape user - %s" % username)
         finally:
@@ -2087,7 +2094,7 @@ class InstagramScraper(object):
 
             user_info = json.loads(resp)['user']
 
-            if user_info['has_anonymous_profile_picture']:
+            if 'has_anonymous_profile_picture' in user_info:
                 return
 
             try:
@@ -2157,17 +2164,37 @@ class InstagramScraper(object):
         if self.logged_in and \
                 ('story-image' in self.media_types or 'story-video' in self.media_types):
             # Get the user's stories.
-            stories = self.fetch_stories(user['id'])
+            all_stories = []
+            all_stories.extend(self.fetch_main_stories(user['id']))
+            all_stories.extend(self.fetch_highlight_stories(user['id']))
 
             # Downloads the user's stories and sends it to the executor.
             iter = 0
-            for item in tqdm.tqdm(stories, desc='Searching {0} for stories'.format(username), unit=" media",
+            for item in tqdm.tqdm(all_stories, desc='Searching {0} for stories'.format(username), unit=" media",
                                   disable=self.quiet):
                 if self.story_has_selected_media_types(item) and self.is_new_media(item):
                     item['username'] = username
                     item['shortcode'] = ''
                     future = executor.submit(self.worker_wrapper, self.download, item, dst)
                     future_to_item[future] = item
+
+                iter = iter + 1
+                if self.maximum != 0 and iter >= self.maximum:
+                    break
+
+    def get_broadcasts(self, dst, executor, future_to_item, user):
+        """Scrapes the user's broadcasts."""
+        if self.logged_in and 'broadcast' in self.media_types:
+            # Get the user's broadcasts.
+            broadcasts = self.fetch_broadcasts(user['id'])
+
+            # Downloads the user's broadcasts and sends it to the executor.
+            iter = 0
+            for item in tqdm.tqdm(broadcasts, desc='Searching {0} for stories'.format(user['username']), unit=" media",
+                                  disable=self.quiet):
+                item['username'] = user['username']
+                future = executor.submit(self.worker_wrapper, self.dowload_broadcast, item, dst)
+                future_to_item[future] = item
 
                 iter = iter + 1
                 if self.maximum != 0 and iter >= self.maximum:
@@ -2231,16 +2258,96 @@ class InstagramScraper(object):
             except (TypeError, KeyError, IndexError):
                 pass
 
-    def fetch_stories(self, user_id):
-        """Fetches the user's stories."""
-        resp = self.get_json(STORIES_URL.format(user_id))
+    def __fetch_stories(self, url, fetching_highlights_metadata=False):
+        resp = self.get_json(url)
 
         if resp is not None:
             retval = json.loads(resp)
             if retval['data'] and 'reels_media' in retval['data'] and len(retval['data']['reels_media']) > 0 and len(retval['data']['reels_media'][0]['items']) > 0:
-                return [self.set_story_url(item) for item in retval['data']['reels_media'][0]['items']]
+                items = []
+
+                for reel_media in retval['data']['reels_media']:
+                    items.extend([self.set_story_url(item) for item in reel_media['items']])
+                    for item in reel_media['items']:
+                        item['highlight'] = fetching_highlights_metadata
+                        self.stories.append(item)
+
+                return items
 
         return []
+
+    def fetch_main_stories(self, user_id):
+        """Fetches the user's main stories."""
+        return self.__fetch_stories(MAIN_STORIES_URL.format(user_id))
+
+    def fetch_highlight_stories(self, user_id):
+        """Fetches the user's highlight stories."""
+
+        resp = self.get_json(HIGHLIGHT_STORIES_USER_ID_URL.format(user_id))
+
+        if resp is not None:
+            retval = json.loads(resp)
+
+            if retval['data'] and 'user' in retval['data'] and 'edge_highlight_reels' in retval['data']['user'] and \
+                    'edges' in retval['data']['user']['edge_highlight_reels']:
+                higlight_stories_ids = [item['node']['id'] for item in
+                                        retval['data']['user']['edge_highlight_reels']['edges']]
+
+                # Workaround for issue https://github.com/rarcega/instagram-scraper/issues/488
+                # __fetch_stories with count of ids more than 20 some times returns "Bad gateway" error.
+                # Instagram web site fetches by 3.
+                ids_chunks = [higlight_stories_ids[i:i + 3] for i in range(0, len(higlight_stories_ids), 3)]
+
+                stories = []
+
+                for ids_chunk in ids_chunks:
+                    stories.extend(self.__fetch_stories(HIGHLIGHT_STORIES_REEL_ID_URL.format('%22%2C%22'.join(str(x) for x in ids_chunk)), fetching_highlights_metadata=True))
+
+                return stories
+              
+        return []
+
+    def fetch_broadcasts(self, user_id):
+        self.session.headers.update({'Host': 'i.instagram.com'})
+        resp = self.get_json(BROADCAST_URL.format(user_id))
+        del self.session.headers['Host']
+
+
+        if resp is not None:
+            retval = json.loads(resp)
+
+
+            if 'post_live_item' not in retval:
+                return []
+
+            broadcasts = []
+
+            for broadcast in retval['post_live_item']['broadcasts']:
+                dash_manifest = ET.fromstring(broadcast['dash_manifest'])
+                xmlns = '{urn:mpeg:dash:schema:mpd:2011}'
+
+                video_adaptation_set = dash_manifest.find('.//{0}Representation[@mimeType="video/mp4"]/..'.format(xmlns))
+                audio_adaptation_set = dash_manifest.find('.//{0}Representation[@mimeType="audio/mp4"]/..'.format(xmlns))
+
+                best_video_quality = (video_adaptation_set.get('maxWidth'), video_adaptation_set.get('maxHeight'))
+                video_element = video_adaptation_set.find('.//*[@width="{0}"][@height="{1}"]/{2}BaseURL'.format(best_video_quality[0], best_video_quality[1], xmlns))
+                video_url = video_element.text
+
+                audio_element = audio_adaptation_set.find('.//{0}BaseURL'.format(xmlns))
+                audio_url = audio_element.text
+
+                ret = {
+                    'user_id': user_id,
+                    'published_time': broadcast['published_time'],
+                    'video': video_url,
+                    'audio': audio_url
+                }
+
+                broadcasts.append(ret)
+
+            return broadcasts
+
+        return None
 
     def query_media_gen(self, user, end_cursor=''):
         """Generator for media."""
@@ -2362,6 +2469,12 @@ class InstagramScraper(object):
 
     def download(self, item, save_dir='./'):
         """Downloads the media file."""
+
+        if self.filter_locations:
+            save_dir = os.path.join(save_dir, self.get_key_from_value(self.filter_locations, item["location"]["id"]))
+        
+        files_path = []
+
         for full_url, base_name in self.templatefilename(item):
             url = full_url.split('?')[0] #try the static url first, stripping parameters
 
@@ -2380,7 +2493,7 @@ class InstagramScraper(object):
                     try:
                         retry = 0
                         retry_delay = RETRY_DELAY
-                        while(True):
+                        while (True):
                             if self.quit:
                                 return
                             try:
@@ -2472,6 +2585,36 @@ class InstagramScraper(object):
                     file_time = int(timestamp if timestamp else time.time())
                     os.utime(file_path, (file_time, file_time))
 
+            files_path.append(file_path)
+
+        return files_path
+
+    def dowload_broadcast(self, item, save_dir='./'):
+        tmp_item = {
+            'urls': [item['video']],
+            'username': item['username'],
+            'shortcode': '',
+            'published_time': item['published_time'],
+            '__typename': 'GraphVideo'
+        }
+
+        # There is only one item
+        video_item = self.download(tmp_item, save_dir)[0]
+
+        tmp_item['urls'] = [item['audio']]
+        # There is only one item
+        audio_item = self.download(tmp_item, save_dir)[0]
+
+        broadcast = mpe.VideoFileClip(video_item)
+        audio_background = mpe.AudioFileClip(audio_item)
+        broadcast = broadcast.set_audio(audio_background)
+        broadcast.write_videofile(broadcast.filename, logger=None)
+        broadcast.close()
+        audio_background.close()
+
+        # Remove audio
+        os.remove(audio_background.filename)
+
     def templatefilename(self, item):
 
         for url in item['urls']:
@@ -2510,7 +2653,7 @@ class InstagramScraper(object):
     @staticmethod
     def __get_timestamp(item):
         if item:
-            for key in ['taken_at_timestamp', 'created_time', 'taken_at', 'date']:
+            for key in ['taken_at_timestamp', 'created_time', 'taken_at', 'date', 'published_time']:
                 found = item.get(key, 0)
                 try:
                     found = int(found)
@@ -2555,8 +2698,8 @@ class InstagramScraper(object):
                 place['title'],
                 place['subtitle'],
                 place['location']['city'],
-                place['location']['lat'],
-                place['location']['lng']
+                place['location'].get('lat'),
+                place['location'].get('lng')
             ))
 
     def merge_json(self, data, dst='./'):
@@ -2577,7 +2720,7 @@ class InstagramScraper(object):
         """Saves the data to a json file."""
         if not os.path.exists(os.path.dirname(dst)):
             os.makedirs(os.path.dirname(dst))
-            
+
         if data:
             output_list = {}
             if os.path.exists(dst):
@@ -2587,6 +2730,21 @@ class InstagramScraper(object):
             with open(dst, 'wb') as f:
                 output_list.update(data)
                 json.dump(output_list, codecs.getwriter('utf-8')(f), indent=4, sort_keys=True, ensure_ascii=False)
+
+    def _persist_metadata(self, dirname, filename):
+        metadata_path = '{0}/{1}.json'.format(dirname, filename)
+        if (self.media_metadata or self.comments or self.include_location):
+            if self.posts:
+                if self.latest:
+                    self.merge_json({'GraphImages': self.posts}, metadata_path)
+                else:
+                    self.save_json({'GraphImages': self.posts}, metadata_path)
+
+            if self.stories:
+                if self.latest:
+                    self.merge_json({'GraphStories': self.stories}, metadata_path)
+                else:
+                    self.save_json({'GraphStories': self.stories}, metadata_path)
 
     @staticmethod
     def get_logger(level=logging.ERROR, dest='', verbose=0):
@@ -2610,7 +2768,7 @@ class InstagramScraper(object):
         return logger
 
     @staticmethod
-    def parse_file_usernames(usernames_file):
+    def get_values_from_file(usernames_file):
         """Parses a file containing a list of usernames."""
         users = []
 
@@ -2623,6 +2781,39 @@ class InstagramScraper(object):
             raise ValueError('File not found ' + err)
 
         return users
+
+    @staticmethod
+    def get_locations_from_file(locations_file):
+        """
+        parse an ini like file with sections composed of headers, [locaiton], 
+        and arguments that are location ids
+        """
+        locations={}
+        with open(locations_file, 'r') as f_in:
+            lines = filter(None, (line.rstrip() for line in f_in))
+            for line in lines:
+                match = re.search(r"\[(\w+)\]", line)
+                if match:
+                    current_group = match.group(1)
+                    locations.setdefault(current_group, [])
+                else:
+                    if  not line.strip().startswith("#"):
+                        try:
+                            locations[current_group].append(line.strip())
+                        except NameError:
+                            print("Must Start File with A Heading Enclosed in []")
+                            sys.exit(1)
+        return locations
+
+    @staticmethod
+    def get_key_from_value(location_dict, value):
+        """
+        Determine if value exist inside dict and return its key, otherwise return None
+        """
+        for key, values in location_dict.items():
+            if value in values:
+                return key
+        return None
 
     @staticmethod
     def parse_delimited_str(input):
@@ -2717,10 +2908,10 @@ def main():
                         help='Save media metadata to json file')
     parser.add_argument('--profile-metadata', '--profile_metadata', action='store_true', default=False,
                         help='Save profile metadata to json file')
-    parser.add_argument('--proxies', default={}, help='Maximum number of items to scrape')
+    parser.add_argument('--proxies', default={}, help='Enable use of proxies, add a valid JSON with http or/and https urls.')
     parser.add_argument('--include-location', '--include_location', action='store_true', default=False,
                         help='Include location data when saving media metadata')
-    parser.add_argument('--media-types', '--media_types', '-t', nargs='+', default=['image', 'video', 'story'],
+    parser.add_argument('--media-types', '--media_types', '-t', nargs='+', default=['image', 'video', 'story', 'broadcast'],
                         help='Specify media types to scrape')
     parser.add_argument('--latest', action='store_true', default=False, help='Scrape new media since the last scrape')
     parser.add_argument('--latest-stamps', '--latest_stamps', default=None,
@@ -2729,6 +2920,8 @@ def main():
                         help='File in which to store cookies so that they can be reused between runs.')
     parser.add_argument('--tag', action='store_true', default=False, help='Scrape media using a hashtag')
     parser.add_argument('--filter', default=None, help='Filter by tags in user posts', nargs='*')
+    parser.add_argument('--filter-location', default=None, nargs="*", help="filter query by only accepting media with location filter as the location id")
+    parser.add_argument('--filter-location-file', default=None, type=str, help="file containing list of locations to filter query by")
     parser.add_argument('--location', action='store_true', default=False, help='Scrape media using a location-id')
     parser.add_argument('--search-location', action='store_true', default=False, help='Search for locations by name')
     parser.add_argument('--comments', action='store_true', default=False, help='Save post comments to json file')
@@ -2762,19 +2955,29 @@ def main():
         parser.print_help()
         raise ValueError('Filters apply to user posts')
 
+    if (args.filter_location or args.filter_location_file) and not args.include_location:
+        parser.print_help()
+        raise ValueError('Location filter needs locations in metadata to filter properly')
+
     if args.filename:
-        args.usernames = InstagramScraper.parse_file_usernames(args.filename)
+        args.usernames = InstagramScraper.get_values_from_file(args.filename)
     else:
         args.usernames = InstagramScraper.parse_delimited_str(','.join(args.username))
 
+    if args.filter_location_file:
+        args.filter_locations = InstagramScraper.get_locations_from_file(args.filter_location_file)
+    elif args.filter_location:
+        locations = {}
+        locations.setdefault('', [])
+        locations[''] = InstagramScraper.parse_delimited_str(','.join(args.filter_location))
+        args.filter_locations = locations
+        
     if args.media_types and len(args.media_types) == 1 and re.compile(r'[,;\s]+').findall(args.media_types[0]):
         args.media_types = InstagramScraper.parse_delimited_str(args.media_types[0])
 
     if args.retry_forever:
         global MAX_RETRIES
         MAX_RETRIES = sys.maxsize
-
-    
 
     scraper = InstagramScraper(**vars(args))
 
