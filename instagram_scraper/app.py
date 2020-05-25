@@ -182,6 +182,19 @@ class InstagramScraper(object):
                 self.logger.info( 'The user has chosen to abort' )
                 return None
 
+    def getProxy():
+        proxyList = open('/home/cumulonimbot/proxyList.json', 'r').read()
+        selectedProxy = random.choice(eval(proxyList))
+        selectedProxyUserName = list(selectedProxy.keys())[0]
+        selectedProxyUserName = selectedProxyUserName.replace('000',str(random.randint(*[1,10])))
+        selectedProxyPassword = list(selectedProxy.values())[0]
+        proxyDict = {
+            "http": "http://{}:{}@p.webshare.io:80".format(selectedProxyUserName,selectedProxyPassword),
+            "https": "http://{}:{}@p.webshare.io:80".format(selectedProxyUserName,selectedProxyPassword),
+        }
+        # if random.randint(1,5) == 1: proxyDict = None #proxy address is slow 
+        return proxyDict  
+
     def safe_get(self, *args, **kwargs):
         # out of the box solution
         # session.mount('https://', HTTPAdapter(max_retries=...))
@@ -193,7 +206,12 @@ class InstagramScraper(object):
             if self.quit:
                 return
             try:
-                response = self.session.get(timeout=CONNECT_TIMEOUT, cookies=self.cookies, *args, **kwargs)
+                # response = self.session.get(timeout=CONNECT_TIMEOUT, cookies=self.cookies, *args, **kwargs)
+
+                header = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:64.0) Gecko/20100101 Firefox/64.0','X-Requested-With': 'XMLHttpRequest'}
+                response = requests.get(urlRequest, headers=header , timeout=5, proxies=getProxy())
+                
+
                 if response.status_code == 404:
                     return
                 response.raise_for_status()
