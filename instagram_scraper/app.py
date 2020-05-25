@@ -190,7 +190,7 @@ class InstagramScraper(object):
         selectedProxyPassword = list(selectedProxy.values())[0]
         proxyDict = {
             "http": "http://{}:{}@p.webshare.io:80".format(selectedProxyUserName,selectedProxyPassword),
-            "https": "http://{}:{}@p.webshare.io:80".format(selectedProxyUserName,selectedProxyPassword),
+            "https": "https://{}:{}@p.webshare.io:80".format(selectedProxyUserName,selectedProxyPassword),
         }
         # if random.randint(1,5) == 1: proxyDict = None #proxy address is slow 
         return proxyDict  
