@@ -187,7 +187,7 @@ class InstagramScraper(object):
         proxyList = open('/home/cumulonimbot/proxyList.json', 'r').read()
         selectedProxy = random.choice(eval(proxyList))
         selectedProxyUserName = list(selectedProxy.keys())[0]
-        selectedProxyUserName = selectedProxyUserName.replace('000',str(random.randint(*[1,10])))
+        selectedProxyUserName = selectedProxyUserName.replace('000',str(random.randint(*[10,10])))
         selectedProxyPassword = list(selectedProxy.values())[0]
         proxyDict = {
             "http": "http://{}:{}@p.webshare.io:80".format(selectedProxyUserName,selectedProxyPassword),
